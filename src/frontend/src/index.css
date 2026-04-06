@@ -1,0 +1,190 @@
+@import url("https://fonts.cdnfonts.com/css/samarkan");
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+
+    /* Semantic tokens mapped to HSV Sugandhika palette */
+    --background: 0.97 0.012 75; /* warm white / cream */
+    --foreground: 0.15 0.02 30; /* near-black warm */
+    --card: 0.99 0.005 75; /* pure card white */
+    --card-foreground: 0.15 0.02 30;
+    --popover: 0.99 0.005 75;
+    --popover-foreground: 0.15 0.02 30;
+    --primary: 0.35 0.1 22; /* deep maroon */
+    --primary-foreground: 0.97 0.012 75;
+    --secondary: 0.93 0.04 80; /* light parchment */
+    --secondary-foreground: 0.35 0.1 22;
+    --muted: 0.93 0.025 75;
+    --muted-foreground: 0.5 0.03 55;
+    --accent: 0.78 0.12 70; /* gold accent */
+    --accent-foreground: 0.15 0.02 30;
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+    --border: 0.87 0.04 75;
+    --input: 0.9 0.03 75;
+    --ring: 0.78 0.12 70;
+
+    /* Brand-specific tokens */
+    --maroon: 0.35 0.12 22; /* #6A1B1B */
+    --maroon-dark: 0.2 0.1 22; /* #2A0A0A */
+    --maroon-light: 0.5 0.1 22;
+    --gold: 0.78 0.12 70; /* #D4AF37 */
+    --gold-light: 0.88 0.1 70;
+    --cream: 0.95 0.025 80; /* #F3EAD6 */
+    --parchment: 0.97 0.018 80; /* #F7F2E7 */
+    --saffron: 0.72 0.18 50; /* #FF7A00 */
+
+    /* Charts */
+    --chart-1: 0.646 0.222 41.116;
+    --chart-2: 0.6 0.118 184.704;
+    --chart-3: 0.398 0.07 227.392;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.769 0.188 70.08;
+
+    /* Sidebar */
+    --sidebar: 0.95 0.025 80;
+    --sidebar-foreground: 0.15 0.02 30;
+    --sidebar-primary: 0.35 0.12 22;
+    --sidebar-primary-foreground: 0.97 0.012 75;
+    --sidebar-accent: 0.93 0.04 80;
+    --sidebar-accent-foreground: 0.35 0.12 22;
+    --sidebar-border: 0.87 0.04 75;
+    --sidebar-ring: 0.78 0.12 70;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  }
+}
+
+@layer components {
+  /* Particle animation container */
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      rgba(212, 175, 55, 0.9) 0%,
+      rgba(255, 122, 0, 0.4) 60%,
+      transparent 100%
+    );
+    animation: particle-rise linear infinite;
+    pointer-events: none;
+  }
+
+  /* Scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(2rem);
+    transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Gold divider decoration */
+  .gold-divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 auto;
+    width: fit-content;
+  }
+
+  .gold-divider::before,
+  .gold-divider::after {
+    content: "";
+    width: 60px;
+    height: 1px;
+    background: linear-gradient(to right, transparent, oklch(0.78 0.12 70));
+  }
+
+  .gold-divider::after {
+    background: linear-gradient(to left, transparent, oklch(0.78 0.12 70));
+  }
+
+  /* Mandala watermark */
+  .mandala-bg {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' opacity='0.04'%3E%3Ccircle cx='100' cy='100' r='80' fill='none' stroke='%23D4AF37' stroke-width='1'/%3E%3Ccircle cx='100' cy='100' r='60' fill='none' stroke='%23D4AF37' stroke-width='0.5'/%3E%3Ccircle cx='100' cy='100' r='40' fill='none' stroke='%23D4AF37' stroke-width='0.5'/%3E%3Ccircle cx='100' cy='100' r='20' fill='none' stroke='%23D4AF37' stroke-width='0.5'/%3E%3Cpath d='M100 20 L100 180 M20 100 L180 100 M38 38 L162 162 M162 38 L38 162' stroke='%23D4AF37' stroke-width='0.5'/%3E%3C/svg%3E");
+    background-size: 300px 300px;
+    background-repeat: repeat;
+  }
+
+  /* Product card hover */
+  .product-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .product-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 16px 40px rgba(106, 27, 27, 0.18);
+  }
+
+  /* Skeleton shimmer */
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, #f0e8d5 25%, #f8f2e3 50%, #f0e8d5 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* 3D text effect for section headings */
+  .text-3d-gold {
+    text-shadow:
+      1px 1px 0 #8b6914,
+      2px 2px 0 #7a5c10,
+      3px 3px 0 #6a4f0c,
+      4px 4px 0 #5a4209,
+      5px 5px 0 #3d2d05,
+      6px 6px 8px rgba(0, 0, 0, 0.7),
+      0 0 20px rgba(212, 175, 55, 0.35);
+  }
+
+  .text-3d-white {
+    text-shadow: 1px 1px 0 #555, 2px 2px 0 #444, 3px 3px 0 #333, 4px 4px 0 #222,
+      5px 5px 6px rgba(0, 0, 0, 0.7);
+  }
+
+  /* Samarkan title */
+  .samarkan-title {
+    font-family: "Samarkan", "Cinzel Decorative", "Cormorant Garamond", serif !important;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: oklch(0.95 0.025 80);
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.78 0.12 70 / 0.5);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.78 0.12 70);
+}

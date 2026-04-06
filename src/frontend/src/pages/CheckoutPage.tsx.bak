@@ -1,0 +1,1326 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  ArrowLeft,
+  CheckCircle,
+  CreditCard,
+  Loader2,
+  Package,
+  ShieldCheck,
+  Smartphone,
+  Star,
+  Truck,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
+import { useCart } from "../contexts/CartContext";
+import { useActor } from "../hooks/useActor";
+import { useCreateCheckoutSession } from "../hooks/useCreateCheckoutSession";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface CustomerInfo {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+}
+
+type PaymentMethod = "upi" | "card" | "cod" | null;
+type Step = 1 | 2 | 3 | 4;
+
+const STEPS = [
+  { id: 1, label: "Details" },
+  { id: 2, label: "Review" },
+  { id: 3, label: "Payment" },
+  { id: 4, label: "Confirm" },
+];
+
+// ─── Progress Indicator ──────────────────────────────────────────────────────
+
+function StepIndicator({ current }: { current: Step }) {
+  return (
+    <div className="flex items-center justify-center gap-0 mb-8">
+      {STEPS.map((step, idx) => (
+        <div key={step.id} className="flex items-center">
+          <div className="flex flex-col items-center gap-1">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300"
+              style={{
+                backgroundColor: current >= step.id ? "#6A1B1B" : "#EDE0C8",
+                color: current >= step.id ? "#FDF6E3" : "#9B8E82",
+                boxShadow:
+                  current === step.id
+                    ? "0 0 0 3px rgba(106,27,27,0.2)"
+                    : "none",
+              }}
+            >
+              {current > step.id ? (
+                <CheckCircle className="w-4 h-4" />
+              ) : (
+                step.id
+              )}
+            </div>
+            <span
+              className="text-xs font-medium hidden sm:block"
+              style={{
+                color: current >= step.id ? "#6A1B1B" : "#9B8E82",
+              }}
+            >
+              {step.label}
+            </span>
+          </div>
+          {idx < STEPS.length - 1 && (
+            <div
+              className="h-0.5 w-12 sm:w-20 mx-1 sm:mx-2 mt-0 sm:-mt-5 transition-all duration-500"
+              style={{
+                backgroundColor: current > step.id ? "#6A1B1B" : "#EDE0C8",
+              }}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Field Component (module-level to prevent remount on every render) ────────
+
+function Field({
+  id,
+  label,
+  placeholder,
+  type = "text",
+  field,
+  autoComplete,
+  info,
+  errors,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  type?: string;
+  field: keyof CustomerInfo;
+  autoComplete?: string;
+  info: CustomerInfo;
+  errors: Partial<CustomerInfo>;
+  onChange: (field: keyof CustomerInfo, value: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label
+        htmlFor={id}
+        className="text-sm font-semibold"
+        style={{ color: "#3B2A16" }}
+      >
+        {label} <span style={{ color: "#6A1B1B" }}>*</span>
+      </Label>
+      <Input
+        id={id}
+        type={type}
+        placeholder={placeholder}
+        value={info[field]}
+        onChange={(e) => onChange(field, e.target.value)}
+        autoComplete={autoComplete}
+        className="border-2 focus:ring-2 h-11"
+        style={{
+          borderColor: errors[field] ? "#DC2626" : "#EDE0C8",
+          backgroundColor: "white",
+        }}
+        data-ocid={`checkout.${field}_input` as string}
+      />
+      {errors[field] && (
+        <p
+          className="text-xs"
+          style={{ color: "#DC2626" }}
+          data-ocid={`checkout.${field}_error` as string}
+        >
+          {errors[field]}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Step 1: Customer Info ────────────────────────────────────────────────────
+
+function CustomerInfoStep({
+  initialInfo,
+  onNext,
+}: {
+  initialInfo: CustomerInfo;
+  onNext: (info: CustomerInfo) => void;
+}) {
+  const [info, setInfo] = useState<CustomerInfo>(initialInfo);
+  const update = (field: keyof CustomerInfo, value: string) =>
+    setInfo((prev) => ({ ...prev, [field]: value }));
+  const [errors, setErrors] = useState<Partial<CustomerInfo>>({});
+
+  const validate = () => {
+    const e: Partial<CustomerInfo> = {};
+    if (!info.name.trim()) e.name = "Full name is required";
+    if (!info.email.trim() || !/^[^@]+@[^@]+\.[^@]+$/.test(info.email))
+      e.email = "Valid email is required";
+    if (!info.phone.trim() || !/^[6-9]\d{9}$/.test(info.phone))
+      e.phone = "Valid 10-digit Indian mobile number required";
+    if (!info.address.trim()) e.address = "Street address is required";
+    if (!info.city.trim()) e.city = "City is required";
+    if (!info.state.trim()) e.state = "State is required";
+    if (!info.pincode.trim() || !/^\d{6}$/.test(info.pincode))
+      e.pincode = "Valid 6-digit pincode required";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (validate()) onNext(info);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <h2
+        className="text-2xl font-bold mb-1"
+        style={{ color: "#6A1B1B", fontFamily: "'Cormorant Garamond', serif" }}
+      >
+        Delivery Information
+      </h2>
+      <p className="text-sm mb-4" style={{ color: "#6B6257" }}>
+        Enter your details for sacred delivery
+      </p>
+
+      <Field
+        id="name"
+        label="Full Name"
+        placeholder="Ramesh Kumar"
+        field="name"
+        autoComplete="name"
+        info={info}
+        errors={errors}
+        onChange={update}
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field
+          id="email"
+          label="Email Address"
+          placeholder="ramesh@example.com"
+          type="email"
+          field="email"
+          autoComplete="email"
+          info={info}
+          errors={errors}
+          onChange={update}
+        />
+        <Field
+          id="phone"
+          label="Phone Number"
+          placeholder="9876543210"
+          type="tel"
+          field="phone"
+          autoComplete="tel"
+          info={info}
+          errors={errors}
+          onChange={update}
+        />
+      </div>
+      <Field
+        id="address"
+        label="Street Address"
+        placeholder="123, Gandhi Nagar, Near Temple"
+        field="address"
+        autoComplete="street-address"
+        info={info}
+        errors={errors}
+        onChange={update}
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Field
+          id="city"
+          label="City"
+          placeholder="Bengaluru"
+          field="city"
+          autoComplete="address-level2"
+          info={info}
+          errors={errors}
+          onChange={update}
+        />
+        <Field
+          id="state"
+          label="State"
+          placeholder="Karnataka"
+          field="state"
+          autoComplete="address-level1"
+          info={info}
+          errors={errors}
+          onChange={update}
+        />
+        <Field
+          id="pincode"
+          label="Pincode"
+          placeholder="560001"
+          field="pincode"
+          autoComplete="postal-code"
+          info={info}
+          errors={errors}
+          onChange={update}
+        />
+      </div>
+
+      <Button
+        type="submit"
+        className="w-full h-12 text-base font-semibold rounded-full mt-4"
+        style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+        data-ocid="checkout.primary_button"
+      >
+        Continue to Order Review
+      </Button>
+    </form>
+  );
+}
+
+// ─── Step 2: Order Review ─────────────────────────────────────────────────────
+
+function OrderReviewStep({
+  items,
+  total,
+  onBack,
+  onNext,
+}: {
+  items: Array<{
+    productId: bigint;
+    quantity: number;
+    name: string;
+    price: number;
+    imageUrl: string;
+  }>;
+  total: number;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const shipping = total >= 1000 ? 0 : 200;
+  const grandTotal = total + shipping;
+
+  return (
+    <div className="space-y-5">
+      <h2
+        className="text-2xl font-bold mb-1"
+        style={{ color: "#6A1B1B", fontFamily: "'Cormorant Garamond', serif" }}
+      >
+        Order Summary
+      </h2>
+      <p className="text-sm mb-4" style={{ color: "#6B6257" }}>
+        Review your sacred items before payment
+      </p>
+
+      <div className="space-y-3" data-ocid="checkout.list">
+        {items.map((item, idx) => (
+          <div
+            key={item.productId.toString()}
+            className="flex gap-4 p-4 rounded-xl border-2"
+            style={{ borderColor: "#EDE0C8", backgroundColor: "white" }}
+            data-ocid={`checkout.item.${idx + 1}`}
+          >
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+            <div className="flex-1">
+              <p className="font-semibold text-sm" style={{ color: "#1C1C1C" }}>
+                {item.name}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "#6B6257" }}>
+                Qty: {item.quantity} × ₹{item.price.toLocaleString("en-IN")}
+              </p>
+            </div>
+            <div className="text-right">
+              <p
+                className="font-bold"
+                style={{
+                  color: "#6A1B1B",
+                  fontFamily: "'Cormorant Garamond', serif",
+                }}
+              >
+                ₹{(item.price * item.quantity).toLocaleString("en-IN")}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="rounded-xl p-4 space-y-3"
+        style={{ backgroundColor: "#FDF6E3", border: "1px solid #EDE0C8" }}
+      >
+        <div className="flex justify-between text-sm">
+          <span style={{ color: "#6B6257" }}>Subtotal</span>
+          <span className="font-medium" style={{ color: "#1C1C1C" }}>
+            ₹{total.toLocaleString("en-IN")}
+          </span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span style={{ color: "#6B6257" }}>Shipping</span>
+          <span
+            className="font-medium"
+            style={{ color: shipping === 0 ? "#15803D" : "#1C1C1C" }}
+          >
+            {shipping === 0 ? "Free" : `₹${shipping}`}
+          </span>
+        </div>
+        {shipping === 0 ? (
+          <p className="text-xs" style={{ color: "#15803D" }}>
+            🎉 You qualify for free shipping! (Order above ₹1000)
+          </p>
+        ) : (
+          <p className="text-xs" style={{ color: "#FF7A00" }}>
+            🚚 Add ₹{(1000 - total).toLocaleString("en-IN")} more for FREE
+            delivery!
+          </p>
+        )}
+        <Separator style={{ backgroundColor: "#EDE0C8" }} />
+        <div className="flex justify-between">
+          <span className="font-bold text-base" style={{ color: "#3B2A16" }}>
+            Grand Total
+          </span>
+          <span
+            className="font-bold text-xl"
+            style={{
+              color: "#6A1B1B",
+              fontFamily: "'Cormorant Garamond', serif",
+            }}
+          >
+            ₹{grandTotal.toLocaleString("en-IN")}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onBack}
+          className="flex-1 h-11 rounded-full"
+          style={{ borderColor: "#6A1B1B", color: "#6A1B1B" }}
+          data-ocid="checkout.secondary_button"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back
+        </Button>
+        <Button
+          type="button"
+          onClick={onNext}
+          className="flex-1 h-11 rounded-full font-semibold"
+          style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+          data-ocid="checkout.primary_button"
+        >
+          Continue to Payment
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 3: Payment Method ───────────────────────────────────────────────────
+
+function PaymentMethodStep({
+  items,
+  total,
+  customer,
+  onBack,
+  onOrderPlaced,
+}: {
+  items: Array<{
+    productId: bigint;
+    quantity: number;
+    name: string;
+    price: number;
+    imageUrl: string;
+  }>;
+  total: number;
+  customer: CustomerInfo;
+  onBack: () => void;
+  onOrderPlaced: (orderId: bigint, method: PaymentMethod) => void;
+}) {
+  const { actor, isFetching } = useActor();
+  const { mutateAsync: createCheckoutSession } = useCreateCheckoutSession();
+  const [selected, setSelected] = useState<PaymentMethod>(null);
+  const [upiId, setUpiId] = useState("");
+  const [upiError, setUpiError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const shipping = total >= 1000 ? 0 : 200;
+  const grandTotal = total + shipping;
+  const fullAddress = `${customer.address}, ${customer.city}, ${customer.state} - ${customer.pincode}`;
+
+  const backendCartItems = items.map((item) => ({
+    productId: item.productId,
+    quantity: BigInt(item.quantity),
+  }));
+
+  const handleUpiSubmit = async () => {
+    if (!upiId.trim() || !/^[\w.]+@[\w]+$/.test(upiId)) {
+      setUpiError("Enter a valid UPI ID (e.g. name@upi)");
+      return;
+    }
+    if (!actor) return;
+    setLoading(true);
+    setError("");
+    try {
+      const orderId = await actor.placeOrderAsGuest(
+        customer.name,
+        customer.email,
+        customer.phone,
+        fullAddress,
+        backendCartItems,
+        grandTotal,
+      );
+      onOrderPlaced(orderId, "upi");
+    } catch {
+      setError("Failed to place order. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCardPayment = async () => {
+    if (!actor) return;
+    setLoading(true);
+    setError("");
+    try {
+      const shoppingItems = items.map((item) => ({
+        productName: item.name,
+        currency: "inr",
+        quantity: BigInt(item.quantity),
+        priceInCents: BigInt(Math.round(item.price * 100)),
+        productDescription: item.name,
+      }));
+      const session = await createCheckoutSession(shoppingItems);
+      window.location.href = session.url;
+    } catch {
+      setError("Failed to initiate card payment. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  const handleCOD = async () => {
+    if (!actor) return;
+    setLoading(true);
+    setError("");
+    try {
+      const orderId = await actor.placeOrderAsGuest(
+        customer.name,
+        customer.email,
+        customer.phone,
+        fullAddress,
+        backendCartItems,
+        grandTotal,
+      );
+      onOrderPlaced(orderId, "cod");
+    } catch {
+      setError("Failed to place order. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const paymentOptions: Array<{
+    id: PaymentMethod;
+    icon: React.ReactNode;
+    title: string;
+    subtitle: string;
+  }> = [
+    {
+      id: "upi",
+      icon: <Smartphone className="w-6 h-6" />,
+      title: "UPI Payment",
+      subtitle: "Pay via any UPI app — instant & secure",
+    },
+    {
+      id: "card",
+      icon: <CreditCard className="w-6 h-6" />,
+      title: "Credit / Debit Card",
+      subtitle: "Powered by Stripe — safe & encrypted",
+    },
+    {
+      id: "cod",
+      icon: <Truck className="w-6 h-6" />,
+      title: "Cash on Delivery",
+      subtitle: "Pay when your order arrives at your door",
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <h2
+        className="text-2xl font-bold mb-1"
+        style={{ color: "#6A1B1B", fontFamily: "'Cormorant Garamond', serif" }}
+      >
+        Choose Payment Method
+      </h2>
+      <p className="text-sm mb-4" style={{ color: "#6B6257" }}>
+        Grand Total:{" "}
+        <span className="font-bold" style={{ color: "#6A1B1B" }}>
+          ₹{grandTotal.toLocaleString("en-IN")}
+        </span>
+      </p>
+
+      <div className="space-y-3" data-ocid="checkout.payment.section">
+        {paymentOptions.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setSelected(opt.id)}
+            className="w-full text-left p-4 rounded-xl border-2 transition-all duration-200"
+            style={{
+              borderColor: selected === opt.id ? "#6A1B1B" : "#EDE0C8",
+              backgroundColor: selected === opt.id ? "#FDF0E8" : "white",
+              boxShadow:
+                selected === opt.id ? "0 0 0 2px rgba(106,27,27,0.15)" : "none",
+            }}
+            data-ocid={`checkout.${opt.id}.toggle`}
+          >
+            <div className="flex items-center gap-4">
+              <div
+                className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{
+                  backgroundColor: selected === opt.id ? "#6A1B1B" : "#EDE0C8",
+                  color: selected === opt.id ? "#FDF6E3" : "#6B6257",
+                }}
+              >
+                {opt.icon}
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold" style={{ color: "#1C1C1C" }}>
+                  {opt.title}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#6B6257" }}>
+                  {opt.subtitle}
+                </p>
+              </div>
+              <div
+                className="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                style={{
+                  borderColor: selected === opt.id ? "#6A1B1B" : "#D4AF37",
+                  backgroundColor:
+                    selected === opt.id ? "#6A1B1B" : "transparent",
+                }}
+              >
+                {selected === opt.id && (
+                  <div className="w-2 h-2 rounded-full bg-white" />
+                )}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* UPI Input */}
+      <AnimatePresence>
+        {selected === "upi" && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="p-4 rounded-xl space-y-3"
+              style={{
+                backgroundColor: "#FDF6E3",
+                border: "1px solid #EDE0C8",
+              }}
+            >
+              <p className="text-sm font-semibold" style={{ color: "#3B2A16" }}>
+                Enter your UPI ID
+              </p>
+              <Input
+                placeholder="yourname@upi"
+                value={upiId}
+                onChange={(e) => {
+                  setUpiId(e.target.value);
+                  setUpiError("");
+                }}
+                className="h-11 border-2"
+                style={{ borderColor: upiError ? "#DC2626" : "#D4AF37" }}
+                data-ocid="checkout.upi.input"
+              />
+              {upiError && (
+                <p
+                  className="text-xs"
+                  style={{ color: "#DC2626" }}
+                  data-ocid="checkout.upi.error_state"
+                >
+                  {upiError}
+                </p>
+              )}
+              <Button
+                type="button"
+                onClick={handleUpiSubmit}
+                disabled={loading || isFetching}
+                className="w-full h-11 rounded-full font-semibold"
+                style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+                data-ocid="checkout.upi.submit_button"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                {loading ? "Processing..." : "Pay via UPI"}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {selected === "card" && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="p-4 rounded-xl space-y-3"
+              style={{
+                backgroundColor: "#FDF6E3",
+                border: "1px solid #EDE0C8",
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" style={{ color: "#15803D" }} />
+                <p className="text-xs" style={{ color: "#15803D" }}>
+                  256-bit SSL encrypted · Powered by Stripe
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={handleCardPayment}
+                disabled={loading || isFetching}
+                className="w-full h-11 rounded-full font-semibold"
+                style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+                data-ocid="checkout.card.submit_button"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Redirecting to Stripe...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Pay ₹{grandTotal.toLocaleString("en-IN")} with Card
+                  </>
+                )}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {selected === "cod" && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="p-4 rounded-xl space-y-3"
+              style={{
+                backgroundColor: "#FDF6E3",
+                border: "1px solid #EDE0C8",
+              }}
+            >
+              <p className="text-sm" style={{ color: "#6B6257" }}>
+                You'll pay{" "}
+                <strong>₹{grandTotal.toLocaleString("en-IN")}</strong> in cash
+                when your order is delivered.
+              </p>
+              <Button
+                type="button"
+                onClick={handleCOD}
+                disabled={loading || isFetching}
+                className="w-full h-11 rounded-full font-semibold"
+                style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+                data-ocid="checkout.cod.submit_button"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                {loading ? "Placing Order..." : "Place Order — Pay on Delivery"}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {error && (
+        <p
+          className="text-sm text-center p-3 rounded-lg"
+          style={{
+            color: "#DC2626",
+            backgroundColor: "#FEF2F2",
+            border: "1px solid #FCA5A5",
+          }}
+          data-ocid="checkout.error_state"
+        >
+          {error}
+        </p>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onBack}
+        className="w-full h-11 rounded-full"
+        style={{ borderColor: "#6A1B1B", color: "#6A1B1B" }}
+        data-ocid="checkout.back.secondary_button"
+      >
+        <ArrowLeft className="w-4 h-4 mr-2" /> Back to Review
+      </Button>
+    </div>
+  );
+}
+
+// ─── Post-Order Review Widget ─────────────────────────────────────────────────
+
+function PostOrderReview({ customerName }: { customerName: string }) {
+  const { actor } = useActor();
+  const [rating, setRating] = useState(0);
+  const [hovered, setHovered] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+
+  if (submitted) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-5 rounded-xl text-center"
+        style={{ backgroundColor: "#F0FDF4", border: "1px solid #86EFAC" }}
+        data-ocid="checkout.review.success_state"
+      >
+        <p className="text-base font-semibold" style={{ color: "#15803D" }}>
+          Thank you for your review! 🙏
+        </p>
+        <p className="text-xs mt-1" style={{ color: "#4B7C5E" }}>
+          Your feedback helps us serve you better.
+        </p>
+      </motion.div>
+    );
+  }
+
+  const handleSubmit = async () => {
+    if (rating === 0) {
+      setReviewError("Please select a star rating.");
+      return;
+    }
+    setSubmitting(true);
+    setReviewError("");
+    try {
+      if (actor) {
+        await (actor as any).submitReview(
+          customerName || "Customer",
+          "",
+          rating,
+          comment,
+          "",
+        );
+      }
+      setSubmitted(true);
+    } catch {
+      setReviewError("Could not submit your review. You can skip this step.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="p-5 rounded-xl space-y-4"
+      style={{
+        backgroundColor: "#FDF6E3",
+        border: "2px solid #D4AF37",
+      }}
+      data-ocid="checkout.review.panel"
+    >
+      <div className="flex items-center gap-2">
+        <Star className="w-5 h-5" style={{ color: "#D4AF37" }} />
+        <h3 className="font-bold text-base" style={{ color: "#3B2A16" }}>
+          How was your experience?
+        </h3>
+      </div>
+
+      {/* Star rating */}
+      <div className="flex gap-2" data-ocid="checkout.review.toggle">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            type="button"
+            onClick={() => setRating(star)}
+            onMouseEnter={() => setHovered(star)}
+            onMouseLeave={() => setHovered(0)}
+            className="transition-transform hover:scale-110"
+            aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
+            data-ocid={"checkout.review.radio"}
+          >
+            <Star
+              className="w-8 h-8"
+              style={{
+                fill: star <= (hovered || rating) ? "#D4AF37" : "transparent",
+                color: star <= (hovered || rating) ? "#D4AF37" : "#C4B49A",
+                transition: "all 0.15s ease",
+              }}
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* Optional comment */}
+      <Textarea
+        placeholder="Share your thoughts (optional)"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        rows={2}
+        className="resize-none border-2 text-sm"
+        style={{ borderColor: "#EDE0C8", backgroundColor: "white" }}
+        data-ocid="checkout.review.textarea"
+      />
+
+      {reviewError && (
+        <p
+          className="text-xs"
+          style={{ color: "#DC2626" }}
+          data-ocid="checkout.review.error_state"
+        >
+          {reviewError}
+        </p>
+      )}
+
+      <Button
+        type="button"
+        onClick={handleSubmit}
+        disabled={submitting}
+        className="w-full h-10 rounded-full font-semibold text-sm"
+        style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+        data-ocid="checkout.review.submit_button"
+      >
+        {submitting ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            Submitting...
+          </>
+        ) : (
+          "Submit Review"
+        )}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Step 4: Confirmation ─────────────────────────────────────────────────────
+
+function OrderConfirmation({
+  orderId,
+  customerName,
+  total,
+  method,
+  upiId,
+  onContinue,
+}: {
+  orderId: bigint;
+  customerName: string;
+  total: number;
+  method: PaymentMethod;
+  upiId: string;
+  onContinue: () => void;
+}) {
+  const shipping = total >= 1000 ? 0 : 200;
+  const grandTotal = total + shipping;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="text-center space-y-5 py-4"
+      data-ocid="checkout.confirm.panel"
+    >
+      {/* Flame / auspicious animation */}
+      <motion.div
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ type: "spring", stiffness: 200, damping: 15 }}
+        className="w-24 h-24 mx-auto rounded-full flex items-center justify-center"
+        style={{ backgroundColor: "#FDF0E8", border: "3px solid #D4AF37" }}
+      >
+        <span className="text-5xl">🪔</span>
+      </motion.div>
+
+      <div>
+        <h2
+          className="text-3xl font-bold"
+          style={{
+            color: "#6A1B1B",
+            fontFamily: "'Cormorant Garamond', serif",
+          }}
+        >
+          🙏 Order Blessed!
+        </h2>
+        <p className="text-sm mt-2" style={{ color: "#6B6257" }}>
+          May your sacred items bring peace and prosperity
+        </p>
+      </div>
+
+      <div
+        className="text-left p-5 rounded-xl space-y-3"
+        style={{ backgroundColor: "#FDF6E3", border: "2px solid #D4AF37" }}
+      >
+        <div className="flex justify-between">
+          <span className="text-sm" style={{ color: "#6B6257" }}>
+            Order ID
+          </span>
+          <span className="font-bold" style={{ color: "#6A1B1B" }}>
+            #HSV-{orderId.toString()}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm" style={{ color: "#6B6257" }}>
+            Customer
+          </span>
+          <span className="font-medium" style={{ color: "#1C1C1C" }}>
+            {customerName}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm" style={{ color: "#6B6257" }}>
+            Amount
+          </span>
+          <span
+            className="font-bold"
+            style={{
+              color: "#6A1B1B",
+              fontFamily: "'Cormorant Garamond', serif",
+            }}
+          >
+            ₹{grandTotal.toLocaleString("en-IN")}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm" style={{ color: "#6B6257" }}>
+            Payment
+          </span>
+          <Badge
+            style={{
+              backgroundColor: method === "cod" ? "#F0FDF4" : "#FDF6E3",
+              color: method === "cod" ? "#15803D" : "#D4AF37",
+              border: `1px solid ${method === "cod" ? "#86EFAC" : "#D4AF37"}`,
+            }}
+          >
+            {method === "upi"
+              ? "UPI — Pending Verification"
+              : method === "card"
+                ? "Card Payment"
+                : "Cash on Delivery"}
+          </Badge>
+        </div>
+        {method === "upi" && upiId && (
+          <div className="flex justify-between">
+            <span className="text-sm" style={{ color: "#6B6257" }}>
+              UPI ID
+            </span>
+            <span className="font-medium text-sm" style={{ color: "#1C1C1C" }}>
+              {upiId}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {method === "upi" && (
+        <div
+          className="p-4 rounded-xl text-sm"
+          style={{
+            backgroundColor: "#FFFBEB",
+            border: "1px solid #D4AF37",
+            color: "#92400E",
+          }}
+        >
+          <p className="font-semibold mb-1">⏳ UPI Verification Pending</p>
+          <p>
+            Please complete the payment via your UPI app. Your order will be
+            confirmed once payment is verified. UPI ID: <strong>{upiId}</strong>
+          </p>
+        </div>
+      )}
+
+      <div
+        className="flex items-center gap-2 justify-center text-xs"
+        style={{ color: "#9B8E82" }}
+      >
+        <Package className="w-4 h-4" />
+        <span>Expected delivery: 3–5 business days</span>
+      </div>
+
+      {/* Post-order review — shown after order is placed */}
+      <PostOrderReview customerName={customerName} />
+
+      <Button
+        type="button"
+        onClick={onContinue}
+        className="w-full h-12 rounded-full font-semibold text-base"
+        style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+        data-ocid="checkout.continue.primary_button"
+      >
+        Continue Shopping
+      </Button>
+    </motion.div>
+  );
+}
+
+// ─── Main Checkout Page ───────────────────────────────────────────────────────
+
+export function CheckoutPage() {
+  const navigate = useNavigate();
+  const { items, total, clearCart } = useCart();
+  const { actor, isFetching } = useActor();
+  const [step, setStep] = useState<Step>(1);
+  const [customer, setCustomer] = useState<CustomerInfo>({
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    state: "",
+    pincode: "",
+  });
+  const [orderId, setOrderId] = useState<bigint>(BigInt(0));
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(null);
+  const [upiIdUsed] = useState("");
+
+  const handleOrderPlaced = (id: bigint, method: PaymentMethod) => {
+    setOrderId(id);
+    setPaymentMethod(method);
+    clearCart(actor);
+    setStep(4);
+  };
+
+  if (isFetching) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "#FDF6E3" }}
+        data-ocid="checkout.loading_state"
+      >
+        <div className="text-center space-y-4">
+          <Loader2
+            className="w-10 h-10 animate-spin mx-auto"
+            style={{ color: "#6A1B1B" }}
+          />
+          <p style={{ color: "#6B6257" }}>Loading sacred checkout...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0 && step !== 4) {
+    return (
+      <div
+        className="min-h-screen flex flex-col"
+        style={{ backgroundColor: "#FDF6E3" }}
+      >
+        <CheckoutNavbar />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div
+            className="text-center space-y-5 p-8 rounded-2xl"
+            style={{
+              backgroundColor: "white",
+              border: "2px solid #EDE0C8",
+              maxWidth: 400,
+            }}
+            data-ocid="checkout.empty_state"
+          >
+            <span className="text-6xl">🛒</span>
+            <h2
+              className="text-2xl font-bold"
+              style={{
+                color: "#6A1B1B",
+                fontFamily: "'Cormorant Garamond', serif",
+              }}
+            >
+              Your cart is empty
+            </h2>
+            <p className="text-sm" style={{ color: "#6B6257" }}>
+              Add some sacred items to your cart before checkout
+            </p>
+            <Button
+              type="button"
+              onClick={() => navigate({ to: "/" })}
+              className="w-full h-11 rounded-full"
+              style={{ backgroundColor: "#6A1B1B", color: "#FDF6E3" }}
+              data-ocid="checkout.empty.primary_button"
+            >
+              Return to Shop
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="min-h-screen flex flex-col"
+      style={{ backgroundColor: "#FDF6E3" }}
+    >
+      <CheckoutNavbar />
+
+      <main className="flex-1 py-8 px-4">
+        <div className="max-w-xl mx-auto">
+          {step < 4 && <StepIndicator current={step} />}
+
+          <div
+            className="rounded-2xl p-6 sm:p-8 shadow-lg"
+            style={{ backgroundColor: "white", border: "1px solid #EDE0C8" }}
+          >
+            {step === 1 && (
+              <CustomerInfoStep
+                initialInfo={customer}
+                onNext={(info) => {
+                  setCustomer(info);
+                  setStep(2);
+                }}
+              />
+            )}
+            {step === 2 && (
+              <OrderReviewStep
+                items={items}
+                total={total}
+                onBack={() => setStep(1)}
+                onNext={() => setStep(3)}
+              />
+            )}
+            {step === 3 && (
+              <PaymentMethodStep
+                items={items}
+                total={total}
+                customer={customer}
+                onBack={() => setStep(2)}
+                onOrderPlaced={(id, method) => {
+                  if (method === "upi") {
+                    // Read the upi ID from local state later
+                  }
+                  handleOrderPlaced(id, method);
+                }}
+              />
+            )}
+            {step === 4 && (
+              <OrderConfirmation
+                orderId={orderId}
+                customerName={customer.name}
+                total={total}
+                method={paymentMethod}
+                upiId={upiIdUsed}
+                onContinue={() => navigate({ to: "/" })}
+              />
+            )}
+          </div>
+
+          {/* Security badge */}
+          {step < 4 && (
+            <div
+              className="flex items-center justify-center gap-2 mt-6 text-xs"
+              style={{ color: "#9B8E82" }}
+            >
+              <ShieldCheck className="w-4 h-4" style={{ color: "#D4AF37" }} />
+              <span>Secure Checkout · 100% Nature-Certified Products</span>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer
+        className="text-center py-4 text-xs"
+        style={{ color: "#9B8E82", borderTop: "1px solid #EDE0C8" }}
+      >
+        © {new Date().getFullYear()}. Built with love using{" "}
+        <a
+          href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:text-amber-600"
+        >
+          caffeine.ai
+        </a>
+      </footer>
+    </div>
+  );
+}
+
+// ─── Checkout Navbar ──────────────────────────────────────────────────────────
+
+function CheckoutNavbar() {
+  const navigate = useNavigate();
+  return (
+    <header
+      className="sticky top-0 z-40 shadow-sm"
+      style={{ backgroundColor: "#F3EAD6" }}
+    >
+      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/" })}
+            className="flex items-center gap-3"
+            data-ocid="checkout.nav.link"
+          >
+            <img
+              src="/assets/whatsapp_image_2026-04-05_at_11.22.46_am-019d5c71-2980-708c-8674-1ca562889a60.jpeg"
+              alt="HSV Sugandhika"
+              className="h-10 w-auto object-contain"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+            <div className="flex flex-col leading-tight">
+              <span
+                className="font-bold text-lg"
+                style={{
+                  color: "#6A1B1B",
+                  fontFamily: "'Cormorant Garamond', serif",
+                }}
+              >
+                HSV Sugandhika
+              </span>
+              <span
+                className="text-xs hidden sm:block"
+                style={{ color: "#D4AF37", letterSpacing: "0.08em" }}
+              >
+                From Nature's Heart
+              </span>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/" })}
+            className="flex items-center gap-2 text-sm font-medium transition-colors hover:text-amber-700"
+            style={{ color: "#6A1B1B" }}
+            data-ocid="checkout.back.link"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Shop
+          </button>
+        </div>
+      </nav>
+    </header>
+  );
+}
